@@ -1,0 +1,19 @@
+services:
+  web:
+    build: .
+    image: persian-news
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+    restart: unless-stopped
+
+  # Runs on demand only: docker compose run --rm train [python train.py --options]
+  train:
+    profiles: [train]
+    build: .
+    image: persian-news
+    command: python train.py
+    volumes:
+      - ./data:/app/data:ro
+      - ./artifacts:/app/artifacts
