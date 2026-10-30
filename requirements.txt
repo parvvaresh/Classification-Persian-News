@@ -1,0 +1,16 @@
+numpy
+pandas
+scikit-learn>=1.2
+xgboost
+hazm
+gensim
+torch>=2.0
+joblib
+tqdm
+matplotlib>=3.4
+seaborn
+wordcloud
+arabic-reshaper
+python-bidi
+fastapi
+uvicorn

@@ -1,0 +1,89 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # GHCR only accepts lowercase names.
+  IMAGE: ghcr.io/parvvaresh/classification-persian-news
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate compose file
+        run: docker compose config --quiet
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: persian-news:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The dataset is not in the repo, so this runs without a model: the page explains how to train one.
+      - name: Smoke test
+        run: |
+          docker run --detach --name app --publish 8000:8000 persian-news:test
+          curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors \
+            http://127.0.0.1:8000/api/model | grep '"ready":false'
+          curl --fail --silent --show-error http://127.0.0.1:8000/ | grep 'id="root"'
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header 'Content-Type: application/json' --data '{"text":"خبر"}' \
+            http://127.0.0.1:8000/api/predict)
+          test "$status" = 503
+
+      - name: Show container logs
+        if: failure()
+        run: docker logs app
+
+  publish:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
